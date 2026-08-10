@@ -37,6 +37,7 @@ dependencies:
   file_selector: ^1.1.0
   http: ^1.6.0
   record: ^7.1.1
+  just_audio: ^0.10.6
 dev_dependencies:
   flutter_test:
     sdk: flutter
