@@ -202,6 +202,15 @@ class VoiceCommandController extends ChangeNotifier {
     while (!_disposed) {
       _suspendRequested = false;
 
+      // Let the previous utterance (ours or the screen reader's) die
+      // away before the microphone opens, so its tail is not captured
+      // as a command.
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+
+      if (_disposed || _suspendRequested) {
+        return;
+      }
+
       _setState(VoiceControlState.listening, 'Listening for a command.');
 
       unawaited(HapticFeedback.mediumImpact());
@@ -306,10 +315,10 @@ class VoiceCommandController extends ChangeNotifier {
         return false;
       }
 
-      await _speakSafely(
-        'I did not understand that command. Please try again.',
-        wait: true,
-      );
+      // Keep the first retry short: on-device testing showed long
+      // error sentences piling up when ambient speech (for example
+      // TalkBack) reached the recognizer.
+      await _speakSafely('Please try again.', wait: true);
 
       return true;
     }

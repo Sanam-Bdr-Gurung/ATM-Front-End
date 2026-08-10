@@ -478,8 +478,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // Half-duplex also applies to touch: reading the result while the
+    // recognizer listens would make the app hear its own speech.
+    final wasVoiceActive = _voiceController.isSessionActive;
+
+    await _voiceController.suspendForMicrophoneHandoff('Reading result.');
+
     try {
-      await _speechService.speak(result.speechText);
+      await _speechService.speakAndWait(result.speechText);
     } on SpeechException catch (error) {
       if (!mounted) {
         return;
@@ -488,6 +494,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+
+    if (wasVoiceActive && mounted) {
+      _voiceController.startManualSession();
     }
   }
 
@@ -1220,9 +1230,13 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Deliberately NOT a live region: on-device testing showed
+    // TalkBack announcing every status change while the recognizer was
+    // listening, so the app heard the screen reader (and its own
+    // status echoes) as commands. The app's own TTS is the
+    // announcement channel; TalkBack users focus the card to read it.
     return Semantics(
       container: true,
-      liveRegion: true,
       excludeSemantics: true,
       label: semanticLabel,
       child: Card(
@@ -1295,9 +1309,12 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentResult = result;
 
+    // Not a live region for the same reason as _StatusCard: the voice
+    // flow already speaks the result, and TalkBack reading the full
+    // progression over that speech (and into the microphone) made the
+    // result impossible to follow on the device.
     return Semantics(
       container: true,
-      liveRegion: true,
       excludeSemantics: true,
       label: _semanticLabel,
       child: Card(
