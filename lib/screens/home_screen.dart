@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import '../services/chord_api_service.dart';
+import '../models/chord_analysis.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,7 +27,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _serviceReady = false;
 
   String _serviceStatus = 'Checking analysis service.';
+  bool _isAnalyzing = false;
 
+  ChordAnalysisResult? _analysisResult;
+
+  String? _analysisError;
   bool get _hasValidSelection {
     return _selectedFile != null &&
         _selectedFileSize != null &&
@@ -39,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _checkAnalysisService();
   }
+
   Future<void> _checkAnalysisService() async {
     if (!mounted) {
       return;
@@ -134,6 +140,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedFileSize = fileSize;
         _selectionError = null;
         _isPickingFile = false;
+
+        _analysisResult = null;
+        _analysisError = null;
       });
     } catch (_) {
       if (!mounted) {
@@ -151,16 +160,66 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showAnalysisPendingMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'WAV file is ready. '
-          'Backend analysis will be connected '
-          'in the next checkpoint.',
-        ),
-      ),
-    );
+  Future<void> _analyzeSelectedAudio() async {
+    final file = _selectedFile;
+    final fileSize = _selectedFileSize;
+
+    if (file == null || fileSize == null || !_serviceReady || _isAnalyzing) {
+      return;
+    }
+
+    setState(() {
+      _isAnalyzing = true;
+      _analysisResult = null;
+      _analysisError = null;
+    });
+
+    try {
+      final result = await _apiService.analyzeWav(
+        fileStream: file.openRead(),
+        fileLength: fileSize,
+        fileName: file.name,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isAnalyzing = false;
+        _analysisResult = result;
+        _analysisError = null;
+      });
+    } on ChordApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isAnalyzing = false;
+        _analysisResult = null;
+        _analysisError = error.message;
+
+        if (error.connectionFailure) {
+          _serviceReady = false;
+          _serviceStatus =
+              'Could not connect to the '
+              'analysis service.';
+        }
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isAnalyzing = false;
+        _analysisResult = null;
+        _analysisError =
+            'Audio analysis failed. '
+            'Please try again.';
+      });
+    }
   }
 
   String _formatFileSize(int bytes) {
@@ -247,32 +306,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Analysis service',
                 message: _serviceStatus,
                 semanticLabel:
-                'Analysis service. '
+                    'Analysis service. '
                     '$_serviceStatus',
-                isError:
-                !_isCheckingService &&
-                    !_serviceReady,
+                isError: !_isCheckingService && !_serviceReady,
               ),
 
-              if (!_isCheckingService &&
-                  !_serviceReady) ...[
+              if (!_isCheckingService && !_serviceReady) ...[
                 const SizedBox(height: 12),
                 Semantics(
                   hint:
-                  'Attempts to reconnect to '
+                      'Attempts to reconnect to '
                       'the chord analysis service.',
                   child: SizedBox(
                     height: 56,
                     child: OutlinedButton.icon(
                       onPressed: _checkAnalysisService,
-                      icon: const Icon(
-                        Icons.refresh,
-                      ),
+                      icon: const Icon(Icons.refresh),
                       label: const Text(
                         'Retry connection',
-                        style: TextStyle(
-                          fontSize: 18,
-                        ),
+                        style: TextStyle(fontSize: 18),
                       ),
                     ),
                   ),
@@ -288,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 semanticHint:
                     'Opens the file picker to '
                     'select a WAV guitar recording.',
-                onPressed: _isPickingFile ? null : _pickWavFile,
+                onPressed: _isPickingFile || _isAnalyzing ? null : _pickWavFile,
               ),
               const SizedBox(height: 16),
               _StatusCard(
@@ -302,17 +354,20 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 24),
               _PrimaryActionButton(
                 icon: Icons.graphic_eq,
-                label: 'Analyze audio',
-                semanticHint: !_serviceReady
+                label: _isAnalyzing ? 'Analyzing audio' : 'Analyze audio',
+                semanticHint: _isAnalyzing
+                    ? 'Chord analysis is currently '
+                          'in progress.'
+                    : !_serviceReady
                     ? 'The analysis service must be '
                           'available before analyzing audio.'
                     : _hasValidSelection
                     ? 'Analyzes the selected WAV file '
-                          'for its chord progression.'
+                          'using Basic Pitch chord recognition.'
                     : 'Choose a WAV file before '
                           'analyzing audio.',
-                onPressed: _hasValidSelection && _serviceReady
-                    ? _showAnalysisPendingMessage
+                onPressed: _hasValidSelection && _serviceReady && !_isAnalyzing
+                    ? _analyzeSelectedAudio
                     : null,
               ),
               const SizedBox(height: 40),
@@ -326,7 +381,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              const _ResultCard(),
+              _ResultCard(
+                isAnalyzing: _isAnalyzing,
+                result: _analysisResult,
+                error: _analysisError,
+              ),
               const SizedBox(height: 24),
               const _PrimaryActionButton(
                 icon: Icons.volume_up,
@@ -426,36 +485,165 @@ class _StatusCard extends StatelessWidget {
 }
 
 class _ResultCard extends StatelessWidget {
-  const _ResultCard();
+  const _ResultCard({
+    required this.isAnalyzing,
+    required this.result,
+    required this.error,
+  });
+
+  final bool isAnalyzing;
+
+  final ChordAnalysisResult? result;
+
+  final String? error;
+
+  String get _semanticLabel {
+    if (isAnalyzing) {
+      return 'Analysis in progress. '
+          'Analyzing the selected WAV file '
+          'using Basic Pitch.';
+    }
+
+    if (error != null) {
+      return 'Analysis failed. $error';
+    }
+
+    final currentResult = result;
+
+    if (currentResult == null) {
+      return 'Analysis result. '
+          'No analysis yet.';
+    }
+
+    final readable = currentResult.readableProgression;
+
+    if (readable.isEmpty) {
+      return 'Analysis complete. '
+          'No reliable chord progression '
+          'was detected.';
+    }
+
+    return 'Analysis complete. '
+        'Detected ${readable.length} '
+        'harmonic segments. '
+        'Chord progression: '
+        '${readable.join(', ')}.';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final currentResult = result;
+
     return Semantics(
       container: true,
       liveRegion: true,
       excludeSemantics: true,
-      label: 'Analysis result. No analysis yet.',
+      label: _semanticLabel,
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Chord progression',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'No analysis yet.',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ],
-          ),
+          child: isAnalyzing
+              ? _buildLoading(context)
+              : error != null
+              ? _buildError(context)
+              : currentResult != null
+              ? _buildResult(context, currentResult)
+              : _buildEmpty(context),
         ),
       ),
+    );
+  }
+
+  Widget _buildLoading(BuildContext context) {
+    return Row(
+      children: [
+        const SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Text(
+            'Analyzing audio with '
+            'Basic Pitch...',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildError(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Analysis failed',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(error!, style: Theme.of(context).textTheme.bodyLarge),
+      ],
+    );
+  }
+
+  Widget _buildResult(BuildContext context, ChordAnalysisResult result) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Chord progression',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          result.progressionText,
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Detected '
+          '${result.harmonicSegments.length} '
+          'harmonic segments',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Audio duration: '
+          '${result.audioDurationSec.toStringAsFixed(1)} seconds',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Analysis time: '
+          '${result.latencyMs.toStringAsFixed(0)} ms',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmpty(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Chord progression',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Text('No analysis yet.', style: Theme.of(context).textTheme.titleLarge),
+      ],
     );
   }
 }
