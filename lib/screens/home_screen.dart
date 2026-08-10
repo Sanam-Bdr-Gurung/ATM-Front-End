@@ -4,15 +4,25 @@ import '../services/chord_api_service.dart';
 import '../models/chord_analysis.dart';
 import '../services/speech_service.dart';
 
+import '../services/voice_command_service.dart';
+import '../voice/voice_command_controller.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     this.apiService = const ChordApiService(),
     this.speechService = const SpeechService(),
+    this.voiceCommandService = const VoiceCommandService(),
+    this.autoStartVoiceControl = true,
   });
 
   final ChordApiService apiService;
   final SpeechService speechService;
+  final VoiceCommandService voiceCommandService;
+
+  /// Whether a voice session starts automatically on launch, so the
+  /// app is usable without touching the screen. Tests may disable it.
+  final bool autoStartVoiceControl;
 
   @override
   State<HomeScreen> createState() {
@@ -20,7 +30,7 @@ class HomeScreen extends StatefulWidget {
   }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   XFile? _selectedFile;
 
   int? _selectedFileSize;
@@ -50,6 +60,8 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectionError == null;
   }
 
+  late final VoiceCommandController _voiceController;
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +69,50 @@ class _HomeScreenState extends State<HomeScreen> {
     _apiService = widget.apiService;
     _speechService = widget.speechService;
 
+    _voiceController = VoiceCommandController(
+      speechService: widget.speechService,
+      voiceService: widget.voiceCommandService,
+      onPhrase: _handleVoicePhrase,
+    );
+
+    WidgetsBinding.instance.addObserver(this);
+
     _checkAnalysisService();
+
+    if (widget.autoStartVoiceControl) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _voiceController.startLaunchSession();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+
+    _voiceController.dispose();
+
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _voiceController.handleAppBackgrounded();
+    }
+  }
+
+  /// V1 behavior: confirm the recognized phrase. Command routing
+  /// replaces this in the next checkpoint.
+  Future<VoiceFlowOutcome> _handleVoicePhrase(String phrase) async {
+    try {
+      await _speechService.speakAndWait('I heard $phrase.');
+    } on SpeechException {
+      // The status card still shows the recognized phrase.
+    }
+
+    return VoiceFlowOutcome.continueListening;
   }
 
   Future<void> _checkAnalysisService() async {
@@ -367,6 +422,57 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ],
+              Semantics(
+                headingLevel: 2,
+                child: Text(
+                  'Voice control',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              ListenableBuilder(
+                listenable: _voiceController,
+                builder: (context, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _StatusCard(
+                        title: 'Voice status',
+                        message: _voiceController.statusMessage,
+                        semanticLabel:
+                            'Voice control. '
+                            '${_voiceController.statusMessage}',
+                        isError:
+                            _voiceController.state ==
+                            VoiceControlState.unavailable,
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      _PrimaryActionButton(
+                        icon: Icons.mic,
+                        label: _voiceController.isSessionActive
+                            ? 'Voice control active'
+                            : 'Listen for a command',
+                        semanticHint: _voiceController.isSessionActive
+                            ? 'ChordAssist voice control '
+                                  'is already running.'
+                            : 'Starts listening for '
+                                  'a spoken ChordAssist command.',
+                        onPressed: _voiceController.canStartListening
+                            ? () {
+                                _voiceController.startManualSession();
+                              }
+                            : null,
+                      ),
+                    ],
+                  );
+                },
+              ),
 
               const SizedBox(height: 24),
               _PrimaryActionButton(
