@@ -181,11 +181,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       unawaited(HapticFeedback.mediumImpact());
 
-      // Play Along announces only prevailing chords: rapid transient
-      // cues are unusable as speech. The raw timeline stays in details.
+      // Play Along uses the cue plan: retained segments with their
+      // original backend times (never merged, so no synthetic spans).
+      // Rapid transient cues are unusable as speech; the raw timeline
+      // stays in details.
       await _playAlongController.start(
         audioPath: audio.file.path,
-        segments: result.prevailingSummary.segments,
+        segments: result.prevailingSummary.cueSegments,
       );
 
       return null;
@@ -1403,7 +1405,7 @@ class _ResultCard extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           'Prevailing chords: '
-          '${result.prevailingSummary.segments.length} '
+          '${result.prevailingSummary.prevailingChordCount} '
           '(${result.recognizedChordSegments.length} raw '
           'chord segments in details)',
           style: Theme.of(context).textTheme.bodyLarge,
