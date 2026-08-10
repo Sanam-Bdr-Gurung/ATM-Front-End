@@ -3,6 +3,7 @@ import 'package:file_selector/file_selector.dart';
 import '../recording/recording_controller.dart';
 import '../services/chord_api_service.dart';
 import '../models/chord_analysis.dart';
+import '../models/selected_audio.dart';
 import '../services/recording_service.dart';
 import '../services/speech_service.dart';
 
@@ -41,9 +42,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  XFile? _selectedFile;
-
-  int? _selectedFileSize;
+  SelectedAudio? _selectedAudio;
 
   String? _selectionError;
 
@@ -65,9 +64,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _showSegmentDetails = false;
 
   bool get _hasValidSelection {
-    return _selectedFile != null &&
-        _selectedFileSize != null &&
-        _selectionError == null;
+    return _selectedAudio != null && _selectionError == null;
   }
 
   late final VoiceCommandController _voiceController;
@@ -132,6 +129,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       isAnalyzing: _isAnalyzing,
       hasResult: _analysisResult != null,
       detailsVisible: _showSegmentDetails,
+      selectedAudioIsRecording: _selectedAudio?.isRecording ?? false,
     );
   }
 
@@ -361,8 +359,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             'Please choose another file.';
 
         setState(() {
-          _selectedFile = null;
-          _selectedFileSize = null;
+          _selectedAudio = null;
           _selectionError = message;
           _isPickingFile = false;
         });
@@ -382,8 +379,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             'Please choose another file.';
 
         setState(() {
-          _selectedFile = null;
-          _selectedFileSize = null;
+          _selectedAudio = null;
           _selectionError = message;
           _isPickingFile = false;
         });
@@ -392,8 +388,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
 
       setState(() {
-        _selectedFile = file;
-        _selectedFileSize = fileSize;
+        _selectedAudio = SelectedAudio(
+          file: file,
+          sizeBytes: fileSize,
+          source: AudioSourceType.pickedFile,
+        );
         _selectionError = null;
         _isPickingFile = false;
 
@@ -414,8 +413,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
 
       setState(() {
-        _selectedFile = null;
-        _selectedFileSize = null;
+        _selectedAudio = null;
         _selectionError = message;
         _isPickingFile = false;
       });
@@ -483,7 +481,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       final result = outcome.result!;
 
-      _handleFinishedRecording(result);
+      await _handleFinishedRecording(result);
 
       return _recordingConfirmation(result);
     } finally {
@@ -491,10 +489,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Keeps the finished recording for analysis.
-  void _handleFinishedRecording(RecordingResult result) {
-    // The recorded WAV becomes the selected audio in the next
-    // checkpoint; for now the confirmation speech carries the outcome.
+  /// The finished recording becomes the selected audio, exactly like a
+  /// picked file: analysis and playback make no distinction.
+  Future<void> _handleFinishedRecording(RecordingResult result) async {
+    final file = XFile(result.path);
+
+    int sizeBytes;
+
+    try {
+      sizeBytes = await file.length();
+    } catch (_) {
+      sizeBytes = 0;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedAudio = SelectedAudio(
+        file: file,
+        sizeBytes: sizeBytes,
+        source: AudioSourceType.recording,
+        duration: result.duration,
+      );
+      _selectionError = null;
+
+      _analysisResult = null;
+      _analysisError = null;
+      _showSegmentDetails = false;
+    });
   }
 
   String _recordingConfirmation(RecordingResult result) {
@@ -523,10 +547,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _analyzeSelectedAudio() async {
-    final file = _selectedFile;
-    final fileSize = _selectedFileSize;
+    final audio = _selectedAudio;
 
-    if (file == null || fileSize == null || !_serviceReady || _isAnalyzing) {
+    if (audio == null || !_serviceReady || _isAnalyzing) {
       return;
     }
     await _speechService.stop();
@@ -539,9 +562,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       final result = await _apiService.analyzeWav(
-        fileStream: file.openRead(),
-        fileLength: fileSize,
-        fileName: file.name,
+        fileStream: audio.file.openRead(),
+        fileLength: audio.sizeBytes,
+        fileName: audio.name,
       );
 
       if (!mounted) {
@@ -608,14 +631,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return error;
     }
 
-    final file = _selectedFile;
+    final audio = _selectedAudio;
 
-    if (file == null || _selectedFileSize == null) {
+    if (audio == null) {
       return 'No audio selected.';
     }
 
-    return '${file.name}\n'
-        '${_formatFileSize(_selectedFileSize!)}';
+    final duration = audio.duration;
+
+    if (audio.isRecording && duration != null) {
+      return '${audio.displayName}\n'
+          '${_speakableSeconds(duration)}\n'
+          '${_formatFileSize(audio.sizeBytes)}';
+    }
+
+    return '${audio.name}\n'
+        '${_formatFileSize(audio.sizeBytes)}';
   }
 
   String get _selectedAudioSemanticLabel {
@@ -625,17 +656,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return 'Audio selection error. $error';
     }
 
-    final file = _selectedFile;
+    final audio = _selectedAudio;
 
-    if (file == null || _selectedFileSize == null) {
+    if (audio == null) {
       return 'Selected audio. '
           'No audio selected.';
     }
 
+    final duration = audio.duration;
+
+    if (audio.isRecording && duration != null) {
+      return 'Selected audio. '
+          'Guitar recording, '
+          '${_speakableSeconds(duration)} long.';
+    }
+
     return 'Selected WAV file. '
-        '${file.name}. '
+        '${audio.name}. '
         'File size '
-        '${_formatFileSize(_selectedFileSize!)}.';
+        '${_formatFileSize(audio.sizeBytes)}.';
   }
 
   @override

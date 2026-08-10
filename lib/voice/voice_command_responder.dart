@@ -11,6 +11,7 @@ class VoiceAppSnapshot {
     required this.isAnalyzing,
     required this.hasResult,
     required this.detailsVisible,
+    this.selectedAudioIsRecording = false,
   });
 
   final bool serviceReady;
@@ -22,6 +23,9 @@ class VoiceAppSnapshot {
   final bool hasResult;
 
   final bool detailsVisible;
+
+  /// Whether the selected audio came from the phone microphone.
+  final bool selectedAudioIsRecording;
 }
 
 /// The application action a decided command should invoke. Every action
@@ -108,6 +112,13 @@ class VoiceCommandResponder {
           return const VoiceDecision.reject(
             'The analysis service is unavailable. '
             'Say retry connection to try again.',
+          );
+        }
+
+        if (state.selectedAudioIsRecording) {
+          return const VoiceDecision.accept(
+            VoiceAction.analyzeSelectedAudio,
+            speech: 'Analyzing your recording using Basic Pitch.',
           );
         }
 

@@ -8,6 +8,7 @@ VoiceAppSnapshot snapshot({
   bool isAnalyzing = false,
   bool hasResult = false,
   bool detailsVisible = false,
+  bool selectedAudioIsRecording = false,
 }) {
   return VoiceAppSnapshot(
     serviceReady: serviceReady,
@@ -15,6 +16,7 @@ VoiceAppSnapshot snapshot({
     isAnalyzing: isAnalyzing,
     hasResult: hasResult,
     detailsVisible: detailsVisible,
+    selectedAudioIsRecording: selectedAudioIsRecording,
   );
 }
 
@@ -67,6 +69,16 @@ void main() {
 
       expect(decision.action, VoiceAction.analyzeSelectedAudio);
       expect(decision.speech, contains('Basic Pitch'));
+    });
+
+    test('analyzing a recording announces the recording wording', () {
+      final decision = responder.decide(
+        VoiceCommand.analyzeRecording,
+        snapshot(hasSelectedAudio: true, selectedAudioIsRecording: true),
+      );
+
+      expect(decision.action, VoiceAction.analyzeSelectedAudio);
+      expect(decision.speech, contains('your recording'));
     });
 
     test('read result before analysis is rejected with guidance', () {
