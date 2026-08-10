@@ -17,6 +17,34 @@ class ChordSegment {
 
   final double confidence;
 
+  bool get isNoChord {
+    return label == 'N';
+  }
+
+  bool get isUncertain {
+    return label == 'X';
+  }
+
+  bool get isRecognizedChord {
+    return !isNoChord && !isUncertain;
+  }
+
+  String get readableLabel {
+    if (isNoChord) {
+      return 'No chord';
+    }
+
+    if (isUncertain) {
+      return 'Uncertain segment';
+    }
+
+    return display;
+  }
+
+  double get durationSec {
+    return end - start;
+  }
+
   factory ChordSegment.fromJson(Map<String, dynamic> json) {
     return ChordSegment(
       start: _readDouble(json['start'], 'start'),
@@ -51,13 +79,13 @@ class ChordAnalysisResult {
   final double latencyMs;
   List<ChordSegment> get recognizedChordSegments {
     return segments
-        .where((segment) => segment.label != 'N' && segment.label != 'X')
+        .where((segment) => segment.isRecognizedChord)
         .toList(growable: false);
   }
 
   List<ChordSegment> get progressionSegments {
     return segments
-        .where((segment) => segment.label != 'N')
+        .where((segment) => !segment.isNoChord)
         .toList(growable: false);
   }
 
@@ -66,11 +94,7 @@ class ChordAnalysisResult {
   }
 
   String _readableSegment(ChordSegment segment) {
-    if (segment.label == 'X') {
-      return 'Uncertain segment';
-    }
-
-    return segment.display;
+    return segment.readableLabel;
   }
 
   List<String> get readableProgression {

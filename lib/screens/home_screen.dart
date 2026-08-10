@@ -33,6 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
   ChordAnalysisResult? _analysisResult;
   final SpeechService _speechService = const SpeechService();
   String? _analysisError;
+
+  bool _showSegmentDetails = false;
   bool get _hasValidSelection {
     return _selectedFile != null &&
         _selectedFileSize != null &&
@@ -164,6 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         _analysisResult = null;
         _analysisError = null;
+        _showSegmentDetails = false;
       });
     } catch (_) {
       if (!mounted) {
@@ -193,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isAnalyzing = true;
       _analysisResult = null;
       _analysisError = null;
+      _showSegmentDetails = false;
     });
 
     try {
@@ -407,6 +411,45 @@ class _HomeScreenState extends State<HomeScreen> {
                 result: _analysisResult,
                 error: _analysisError,
               ),
+              if (_analysisResult != null) ...[
+                const SizedBox(height: 16),
+
+                Semantics(
+                  expanded: _showSegmentDetails,
+                  hint: _showSegmentDetails
+                      ? 'Hides the individual '
+                            'analysis segments.'
+                      : 'Shows each detected segment '
+                            'with its time range.',
+                  child: SizedBox(
+                    height: 56,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showSegmentDetails = !_showSegmentDetails;
+                        });
+                      },
+                      icon: Icon(
+                        _showSegmentDetails
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                      ),
+                      label: Text(
+                        _showSegmentDetails
+                            ? 'Hide segment details'
+                            : 'Show segment details',
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                    ),
+                  ),
+                ),
+
+                if (_showSegmentDetails) ...[
+                  const SizedBox(height: 16),
+
+                  _SegmentDetails(segments: _analysisResult!.segments),
+                ],
+              ],
               const SizedBox(height: 24),
               _PrimaryActionButton(
                 icon: Icons.volume_up,
@@ -675,6 +718,138 @@ class _ResultCard extends StatelessWidget {
         const SizedBox(height: 12),
         Text('No analysis yet.', style: Theme.of(context).textTheme.titleLarge),
       ],
+    );
+  }
+}
+
+class _SegmentDetails extends StatelessWidget {
+  const _SegmentDetails({required this.segments});
+
+  final List<ChordSegment> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    if (segments.isEmpty) {
+      return const _StatusCard(
+        title: 'Segment details',
+        message: 'No analysis segments were returned.',
+        semanticLabel:
+            'Segment details. '
+            'No analysis segments were returned.',
+        isError: false,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          headingLevel: 3,
+          child: Text(
+            'Segment details',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        for (var index = 0; index < segments.length; index++) ...[
+          _SegmentCard(index: index + 1, segment: segments[index]),
+
+          if (index < segments.length - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _SegmentCard extends StatelessWidget {
+  const _SegmentCard({required this.index, required this.segment});
+
+  final int index;
+
+  final ChordSegment segment;
+
+  String _formatTime(double seconds) {
+    return seconds.toStringAsFixed(1);
+  }
+
+  String get _timeText {
+    return '${_formatTime(segment.start)} '
+        'to ${_formatTime(segment.end)} '
+        'seconds';
+  }
+
+  String get _confidenceText {
+    final percentage = (segment.confidence * 100).round();
+
+    return 'Confidence $percentage percent';
+  }
+
+  String get _semanticLabel {
+    final buffer = StringBuffer();
+
+    buffer.write('Segment $index. ');
+
+    buffer.write('${segment.readableLabel}. ');
+
+    buffer.write(
+      'From ${_formatTime(segment.start)} '
+      'to ${_formatTime(segment.end)} '
+      'seconds.',
+    );
+
+    if (segment.isRecognizedChord) {
+      buffer.write(' $_confidenceText.');
+    }
+
+    return buffer.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: _semanticLabel,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Segment $index',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+
+              const SizedBox(height: 6),
+
+              Text(
+                segment.readableLabel,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 6),
+
+              Text(_timeText, style: Theme.of(context).textTheme.bodyLarge),
+
+              if (segment.isRecognizedChord) ...[
+                const SizedBox(height: 4),
+
+                Text(
+                  _confidenceText,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
