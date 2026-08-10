@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import '../services/chord_api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,11 +19,48 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectionError;
 
   bool _isPickingFile = false;
+  final ChordApiService _apiService = const ChordApiService();
+
+  bool _isCheckingService = true;
+
+  bool _serviceReady = false;
+
+  String _serviceStatus = 'Checking analysis service.';
 
   bool get _hasValidSelection {
     return _selectedFile != null &&
         _selectedFileSize != null &&
         _selectionError == null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _checkAnalysisService();
+  }
+  Future<void> _checkAnalysisService() async {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isCheckingService = true;
+      _serviceReady = false;
+      _serviceStatus = 'Checking analysis service.';
+    });
+
+    final result = await _apiService.checkHealth();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isCheckingService = false;
+      _serviceReady = result.ready;
+      _serviceStatus = result.message;
+    });
   }
 
   Future<void> _pickWavFile() async {
@@ -205,6 +243,43 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
+              _StatusCard(
+                title: 'Analysis service',
+                message: _serviceStatus,
+                semanticLabel:
+                'Analysis service. '
+                    '$_serviceStatus',
+                isError:
+                !_isCheckingService &&
+                    !_serviceReady,
+              ),
+
+              if (!_isCheckingService &&
+                  !_serviceReady) ...[
+                const SizedBox(height: 12),
+                Semantics(
+                  hint:
+                  'Attempts to reconnect to '
+                      'the chord analysis service.',
+                  child: SizedBox(
+                    height: 56,
+                    child: OutlinedButton.icon(
+                      onPressed: _checkAnalysisService,
+                      icon: const Icon(
+                        Icons.refresh,
+                      ),
+                      label: const Text(
+                        'Retry connection',
+                        style: TextStyle(
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
               _PrimaryActionButton(
                 icon: Icons.audio_file,
                 label: _isPickingFile
@@ -228,13 +303,15 @@ class _HomeScreenState extends State<HomeScreen> {
               _PrimaryActionButton(
                 icon: Icons.graphic_eq,
                 label: 'Analyze audio',
-                semanticHint: _hasValidSelection
-                    ? 'Analyzes the selected WAV '
-                          'file for its chord '
-                          'progression.'
+                semanticHint: !_serviceReady
+                    ? 'The analysis service must be '
+                          'available before analyzing audio.'
+                    : _hasValidSelection
+                    ? 'Analyzes the selected WAV file '
+                          'for its chord progression.'
                     : 'Choose a WAV file before '
                           'analyzing audio.',
-                onPressed: _hasValidSelection
+                onPressed: _hasValidSelection && _serviceReady
                     ? _showAnalysisPendingMessage
                     : null,
               ),
