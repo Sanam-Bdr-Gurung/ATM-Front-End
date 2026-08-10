@@ -5,7 +5,10 @@ import '../models/chord_analysis.dart';
 import '../services/speech_service.dart';
 
 import '../services/voice_command_service.dart';
+import '../voice/voice_command.dart';
 import '../voice/voice_command_controller.dart';
+import '../voice/voice_command_parser.dart';
+import '../voice/voice_command_responder.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -103,16 +106,152 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// V1 behavior: confirm the recognized phrase. Command routing
-  /// replaces this in the next checkpoint.
+  static const VoiceCommandParser _voiceParser = VoiceCommandParser();
+
+  static const VoiceCommandResponder _voiceResponder = VoiceCommandResponder();
+
+  int _consecutiveUnknownCommands = 0;
+
+  VoiceAppSnapshot get _voiceSnapshot {
+    return VoiceAppSnapshot(
+      serviceReady: _serviceReady,
+      hasSelectedAudio: _hasValidSelection,
+      isAnalyzing: _isAnalyzing,
+      hasResult: _analysisResult != null,
+      detailsVisible: _showSegmentDetails,
+    );
+  }
+
+  /// Routes a recognized phrase onto the same functions the on-screen
+  /// buttons call. Never duplicates application logic.
   Future<VoiceFlowOutcome> _handleVoicePhrase(String phrase) async {
-    try {
-      await _speechService.speakAndWait('I heard $phrase.');
-    } on SpeechException {
-      // The status card still shows the recognized phrase.
+    final command = _voiceParser.parse(phrase);
+
+    final decision = _voiceResponder.decide(command, _voiceSnapshot);
+
+    if (decision.isRejection) {
+      if (command == VoiceCommand.unknown) {
+        _consecutiveUnknownCommands += 1;
+      } else {
+        _consecutiveUnknownCommands = 0;
+      }
+
+      await _speakForVoiceFlow(decision.speech!);
+
+      if (_consecutiveUnknownCommands >= 3) {
+        _consecutiveUnknownCommands = 0;
+
+        await _speakForVoiceFlow('Voice control is paused.');
+
+        return VoiceFlowOutcome.stopListening;
+      }
+
+      return VoiceFlowOutcome.continueListening;
     }
 
-    return VoiceFlowOutcome.continueListening;
+    _consecutiveUnknownCommands = 0;
+
+    final announcement = decision.speech;
+
+    if (announcement != null) {
+      await _speakForVoiceFlow(announcement);
+    }
+
+    return _runVoiceAction(decision.action);
+  }
+
+  Future<VoiceFlowOutcome> _runVoiceAction(VoiceAction action) async {
+    switch (action) {
+      case VoiceAction.none:
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.help:
+        await _speakForVoiceFlow(VoiceCommandResponder.helpSpeech);
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.chooseFile:
+        final outcome = await _pickWavFile();
+
+        await _speakForVoiceFlow(outcome);
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.analyzeSelectedAudio:
+        await _analyzeSelectedAudio();
+
+        await _speakForVoiceFlow(_analysisOutcomeSpeech);
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.readResult:
+        final result = _analysisResult;
+
+        if (result != null) {
+          await _speakForVoiceFlow(result.speechText);
+        }
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.showDetails:
+        if (mounted) {
+          setState(() {
+            _showSegmentDetails = true;
+          });
+        }
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.hideDetails:
+        if (mounted) {
+          setState(() {
+            _showSegmentDetails = false;
+          });
+        }
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.retryConnection:
+        await _checkAnalysisService();
+
+        await _speakForVoiceFlow(_serviceStatus);
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.stopListening:
+        await _speakForVoiceFlow(
+          'Voice control stopped. '
+          'Use the Listen for a command button to start again.',
+        );
+
+        return VoiceFlowOutcome.stopListening;
+    }
+  }
+
+  String get _analysisOutcomeSpeech {
+    final error = _analysisError;
+
+    if (error != null) {
+      return error;
+    }
+
+    final result = _analysisResult;
+
+    if (result == null) {
+      return 'Audio analysis did not complete. Please try again.';
+    }
+
+    return 'Analysis complete. ${result.speechText}';
+  }
+
+  /// Speaks within the voice session, waiting for completion so the
+  /// recognizer never runs while ChordAssist is talking.
+  Future<void> _speakForVoiceFlow(String text) async {
+    try {
+      await _speechService.speakAndWait(text);
+    } on SpeechException {
+      // The visual status and semantics still carry the message.
+    }
   }
 
   Future<void> _checkAnalysisService() async {
@@ -159,9 +298,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _pickWavFile() async {
+  /// Opens the WAV file picker. Returns a spoken outcome message so
+  /// the voice flow can announce what happened; the button path
+  /// ignores the return value and relies on the visual status card.
+  Future<String> _pickWavFile() async {
     if (_isPickingFile) {
-      return;
+      return 'The file picker is already open.';
     }
 
     setState(() {
@@ -180,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
 
       if (!mounted) {
-        return;
+        return 'No file was selected.';
       }
 
       if (file == null) {
@@ -188,41 +330,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _isPickingFile = false;
         });
 
-        return;
+        return 'No file was selected.';
       }
 
       final fileName = file.name.trim();
 
       if (!fileName.toLowerCase().endsWith('.wav')) {
+        const message =
+            'That file is not a supported WAV file. '
+            'Please choose another file.';
+
         setState(() {
           _selectedFile = null;
           _selectedFileSize = null;
-          _selectionError =
-              'Unsupported audio file. '
-              'Please choose a WAV file.';
+          _selectionError = message;
           _isPickingFile = false;
         });
 
-        return;
+        return message;
       }
 
       final fileSize = await file.length();
 
       if (!mounted) {
-        return;
+        return 'No file was selected.';
       }
 
       if (fileSize <= 0) {
+        const message =
+            'The selected WAV file is empty. '
+            'Please choose another file.';
+
         setState(() {
           _selectedFile = null;
           _selectedFileSize = null;
-          _selectionError =
-              'The selected WAV file is empty. '
-              'Please choose another file.';
+          _selectionError = message;
           _isPickingFile = false;
         });
 
-        return;
+        return message;
       }
 
       setState(() {
@@ -235,19 +381,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _analysisError = null;
         _showSegmentDetails = false;
       });
+
+      return 'Selected ${file.name}. '
+          'Say analyze audio to continue.';
     } catch (_) {
+      const message =
+          'The audio file could not be selected. '
+          'Please try again.';
+
       if (!mounted) {
-        return;
+        return message;
       }
 
       setState(() {
         _selectedFile = null;
         _selectedFileSize = null;
-        _selectionError =
-            'The audio file could not be selected. '
-            'Please try again.';
+        _selectionError = message;
         _isPickingFile = false;
       });
+
+      return message;
     }
   }
 
