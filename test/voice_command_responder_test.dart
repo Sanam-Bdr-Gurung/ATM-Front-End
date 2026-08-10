@@ -139,6 +139,38 @@ void main() {
       );
     });
 
+    test('start recording is accepted when idle', () {
+      final decision = responder.decide(
+        VoiceCommand.startRecording,
+        snapshot(),
+      );
+
+      expect(decision.action, VoiceAction.startRecording);
+    });
+
+    test('record again maps to the same recording action', () {
+      final decision = responder.decide(VoiceCommand.recordAgain, snapshot());
+
+      expect(decision.action, VoiceAction.startRecording);
+    });
+
+    test('start recording during analysis is rejected', () {
+      final decision = responder.decide(
+        VoiceCommand.startRecording,
+        snapshot(isAnalyzing: true),
+      );
+
+      expect(decision.isRejection, isTrue);
+      expect(decision.speech, contains('currently analyzing'));
+    });
+
+    test('stop recording outside recording mode explains state', () {
+      final decision = responder.decide(VoiceCommand.stopRecording, snapshot());
+
+      expect(decision.isRejection, isTrue);
+      expect(decision.speech, contains('No recording is in progress'));
+    });
+
     test('play along before analysis explains the requirement', () {
       final decision = responder.decide(
         VoiceCommand.playAlong,

@@ -32,6 +32,7 @@ enum VoiceAction {
 
   help,
   chooseFile,
+  startRecording,
   analyzeSelectedAudio,
   readResult,
   showDetails,
@@ -63,8 +64,8 @@ class VoiceCommandResponder {
   const VoiceCommandResponder();
 
   static const String helpSpeech =
-      'You can say: choose file, analyze audio, read result, '
-      'show details, hide details, retry connection, '
+      'You can say: choose file, start recording, analyze audio, '
+      'read result, show details, hide details, retry connection, '
       'or stop listening.';
 
   static const String _analysisInProgress =
@@ -169,14 +170,22 @@ class VoiceCommandResponder {
           speech: 'Checking the analysis service.',
         );
 
-      // Recording arrives in a later checkpoint; respond honestly
-      // rather than silently ignoring the command.
       case VoiceCommand.startRecording:
       case VoiceCommand.recordAgain:
+        if (state.isAnalyzing) {
+          return const VoiceDecision.reject(_analysisInProgress);
+        }
+
+        // The recording flow speaks its own detailed instructions
+        // before the microphone switches to the guitar.
+        return const VoiceDecision.accept(VoiceAction.startRecording);
+
       case VoiceCommand.stopRecording:
+        // While actually recording, the voice recognizer is off, so
+        // this command can only arrive outside recording mode.
         return const VoiceDecision.reject(
-          'Guitar recording is not available yet in this version. '
-          'Say choose file to analyze an existing WAV file.',
+          'No recording is in progress. '
+          'Say start recording to record your guitar.',
         );
 
       // Play Along arrives in a later checkpoint.

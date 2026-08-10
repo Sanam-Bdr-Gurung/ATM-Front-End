@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import '../recording/recording_controller.dart';
 import '../services/chord_api_service.dart';
 import '../models/chord_analysis.dart';
+import '../services/recording_service.dart';
 import '../services/speech_service.dart';
 
 import '../services/voice_command_service.dart';
+import 'recording_screen.dart';
 import '../voice/voice_command.dart';
 import '../voice/voice_command_controller.dart';
 import '../voice/voice_command_parser.dart';
@@ -16,12 +19,16 @@ class HomeScreen extends StatefulWidget {
     this.apiService = const ChordApiService(),
     this.speechService = const SpeechService(),
     this.voiceCommandService = const VoiceCommandService(),
+    this.recordingService,
     this.autoStartVoiceControl = true,
   });
 
   final ChordApiService apiService;
   final SpeechService speechService;
   final VoiceCommandService voiceCommandService;
+
+  /// Injectable for tests; the real recorder is created when omitted.
+  final RecordingService? recordingService;
 
   /// Whether a voice session starts automatically on launch, so the
   /// app is usable without touching the screen. Tests may disable it.
@@ -65,12 +72,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   late final VoiceCommandController _voiceController;
 
+  late final RecordingService _recordingService;
+
+  bool _isRecordingFlowActive = false;
+
   @override
   void initState() {
     super.initState();
 
     _apiService = widget.apiService;
     _speechService = widget.speechService;
+
+    _recordingService = widget.recordingService ?? RecordingService();
 
     _voiceController = VoiceCommandController(
       speechService: widget.speechService,
@@ -174,6 +187,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final outcome = await _pickWavFile();
 
         await _speakForVoiceFlow(outcome);
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.startRecording:
+        final message = await _runGuitarRecordingFlow();
+
+        await _speakForVoiceFlow(message);
 
         return VoiceFlowOutcome.continueListening;
 
@@ -402,6 +422,104 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       return message;
     }
+  }
+
+  static const String _preRecordingInstructions =
+      'Recording will start now. '
+      'While recording, the microphone is used for your guitar, '
+      'so voice commands are temporarily unavailable. '
+      'The screen is now the Stop recording control. '
+      'With TalkBack, touch the screen and double-tap to stop. '
+      'Recording will automatically stop after sixty seconds.';
+
+  /// Touch entry point for guitar recording. Suspends any active voice
+  /// session first and resumes it after the spoken confirmation.
+  Future<void> _recordGuitarFromButton() async {
+    final wasVoiceActive = _voiceController.isSessionActive;
+
+    final message = await _runGuitarRecordingFlow();
+
+    await _speakForVoiceFlow(message);
+
+    if (wasVoiceActive && mounted) {
+      _voiceController.startManualSession();
+    }
+  }
+
+  /// The shared recording flow: spoken instructions, microphone
+  /// handoff, the dedicated recording screen, and the outcome message.
+  /// Voice and touch entry points both run exactly this.
+  Future<String> _runGuitarRecordingFlow() async {
+    if (_isRecordingFlowActive) {
+      return 'Recording is already in progress.';
+    }
+
+    _isRecordingFlowActive = true;
+
+    try {
+      // The guitar owns the microphone from here until the recording
+      // screen closes.
+      await _voiceController.suspendForMicrophoneHandoff('Recording guitar.');
+
+      await _speakForVoiceFlow(_preRecordingInstructions);
+
+      if (!mounted) {
+        return 'Recording could not start.';
+      }
+
+      final outcome = await Navigator.of(context).push<RecordingOutcome>(
+        MaterialPageRoute<RecordingOutcome>(
+          builder: (_) {
+            return RecordingScreen(recordingService: _recordingService);
+          },
+        ),
+      );
+
+      if (outcome == null || outcome.errorMessage != null) {
+        return outcome?.errorMessage ??
+            'Recording could not start. '
+                'Check microphone access and try again.';
+      }
+
+      final result = outcome.result!;
+
+      _handleFinishedRecording(result);
+
+      return _recordingConfirmation(result);
+    } finally {
+      _isRecordingFlowActive = false;
+    }
+  }
+
+  /// Keeps the finished recording for analysis.
+  void _handleFinishedRecording(RecordingResult result) {
+    // The recorded WAV becomes the selected audio in the next
+    // checkpoint; for now the confirmation speech carries the outcome.
+  }
+
+  String _recordingConfirmation(RecordingResult result) {
+    final seconds = _speakableSeconds(result.duration);
+
+    final stopPhrase = result.autoStopped
+        ? 'Recording stopped automatically.'
+        : 'Recording stopped.';
+
+    return '$stopPhrase '
+        '$seconds recorded. '
+        'Say analyze recording to recognize the chords, '
+        'or say record again.';
+  }
+
+  String _speakableSeconds(Duration duration) {
+    final milliseconds = duration.inMilliseconds;
+
+    if (milliseconds % 1000 == 0) {
+      return '${milliseconds ~/ 1000} seconds';
+    }
+
+    final seconds = milliseconds / 1000.0;
+
+    return '${seconds.toStringAsFixed(1)} seconds';
   }
 
   Future<void> _analyzeSelectedAudio() async {
@@ -637,6 +755,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     'Opens the file picker to '
                     'select a WAV guitar recording.',
                 onPressed: _isPickingFile || _isAnalyzing ? null : _pickWavFile,
+              ),
+              const SizedBox(height: 16),
+              _PrimaryActionButton(
+                icon: Icons.fiber_manual_record,
+                label: 'Record guitar',
+                semanticHint:
+                    'Records guitar audio with the '
+                    'phone microphone for up to sixty seconds.',
+                onPressed: _isPickingFile || _isAnalyzing
+                    ? null
+                    : _recordGuitarFromButton,
               ),
               const SizedBox(height: 16),
               _StatusCard(
