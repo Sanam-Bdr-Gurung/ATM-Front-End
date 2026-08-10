@@ -865,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('ChordAssist')),
+      appBar: AppBar(title: const Text('GUITAR')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -898,20 +898,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 isError: !_isCheckingService && !_serviceReady,
               ),
 
-              if (!_isCheckingService && !_serviceReady) ...[
+              // The retry control stays in the tree while a check runs
+              // (disabled, with a spinner) so the layout does not jump
+              // when the button would otherwise disappear and reappear.
+              if (!_serviceReady) ...[
                 const SizedBox(height: 12),
                 Semantics(
-                  hint:
-                      'Attempts to reconnect to '
-                      'the chord analysis service.',
+                  hint: _isCheckingService
+                      ? 'A connection check is in progress.'
+                      : 'Attempts to reconnect to '
+                            'the chord analysis service.',
                   child: SizedBox(
                     height: 56,
                     child: OutlinedButton.icon(
-                      onPressed: _checkAnalysisService,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text(
-                        'Retry connection',
-                        style: TextStyle(fontSize: 18),
+                      onPressed: _isCheckingService
+                          ? null
+                          : _checkAnalysisService,
+                      icon: _isCheckingService
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                      label: Text(
+                        _isCheckingService
+                            ? 'Checking connection'
+                            : 'Retry connection',
+                        style: const TextStyle(fontSize: 18),
                       ),
                     ),
                   ),
@@ -923,6 +937,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   'Voice control',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
@@ -1026,6 +1041,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   'Results',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
@@ -1095,6 +1111,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   'Play Along',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
