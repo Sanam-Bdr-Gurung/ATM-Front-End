@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
@@ -176,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
 
     try {
-      await HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
 
       await _playAlongController.start(
         audioPath: audio.file.path,
@@ -209,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     await _playAlongController.pause();
 
-    await HapticFeedback.selectionClick();
+    unawaited(HapticFeedback.selectionClick());
 
     // With playback paused the microphone is free again, so the voice
     // session can take pause/resume/stop commands.
@@ -233,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     await _playAlongController.resume();
 
-    await HapticFeedback.selectionClick();
+    unawaited(HapticFeedback.selectionClick());
   }
 
   Future<void> _stopPlayAlongFromButton() async {
@@ -243,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     await _playAlongController.stop();
 
-    await HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
 
     await _speakForVoiceFlow('Play Along stopped.');
 
@@ -401,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case VoiceAction.stopPlayback:
         await _playAlongController.stop();
 
-        await HapticFeedback.mediumImpact();
+        unawaited(HapticFeedback.mediumImpact());
 
         _resumeVoiceAfterPlayAlong = false;
 

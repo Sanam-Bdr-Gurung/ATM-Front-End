@@ -121,15 +121,19 @@ class ChordAnalysisResult {
 
     final buffer = StringBuffer();
 
+    final chordNoun = chordCount == 1 ? 'segment' : 'segments';
+
     buffer.write(
       'Detected $chordCount recognized '
-      'chord segments',
+      'chord $chordNoun',
     );
 
     if (uncertaintyCount > 0) {
+      final uncertainNoun = uncertaintyCount == 1 ? 'segment' : 'segments';
+
       buffer.write(
         ' and $uncertaintyCount uncertain '
-        'segments',
+        '$uncertainNoun',
       );
     }
 

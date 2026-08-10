@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -202,7 +204,7 @@ class VoiceCommandController extends ChangeNotifier {
 
       _setState(VoiceControlState.listening, 'Listening for a command.');
 
-      await HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
 
       final String? phrase;
 
@@ -235,7 +237,7 @@ class VoiceCommandController extends ChangeNotifier {
 
       _setState(VoiceControlState.processing, 'Heard: $phrase');
 
-      await HapticFeedback.selectionClick();
+      unawaited(HapticFeedback.selectionClick());
 
       final outcome = await _onPhrase(phrase);
 

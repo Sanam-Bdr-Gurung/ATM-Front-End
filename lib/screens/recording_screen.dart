@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -71,7 +73,8 @@ class _RecordingScreenState extends State<RecordingScreen> {
 
   Future<void> _startRecording() async {
     try {
-      await HapticFeedback.heavyImpact();
+      // Haptics are a secondary signal and must never gate the flow.
+      unawaited(HapticFeedback.heavyImpact());
 
       await _controller.start();
     } on RecordingException catch (error) {
@@ -92,7 +95,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
     }
 
     try {
-      await HapticFeedback.heavyImpact();
+      unawaited(HapticFeedback.heavyImpact());
 
       final result = await _controller.stop();
 

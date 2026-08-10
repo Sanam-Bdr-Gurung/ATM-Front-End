@@ -30,7 +30,13 @@ class _OfflineApiService extends ChordApiService {
 }
 
 Widget _buildTestApp({required ChordApiService apiService}) {
-  return MaterialApp(home: HomeScreen(apiService: apiService));
+  // Voice auto-start stays off: widget tests cannot run the native
+  // speech channels, and faking SpeechRecognizer/TTS here is
+  // explicitly out of scope. Native voice behavior is verified on a
+  // physical device.
+  return MaterialApp(
+    home: HomeScreen(apiService: apiService, autoStartVoiceControl: false),
+  );
 }
 
 void main() {
@@ -72,13 +78,51 @@ void main() {
         find.text('Recognize guitar chords'),
       );
 
+      final voiceHeading = tester.getSemantics(find.text('Voice control'));
+
       final resultsHeading = tester.getSemantics(find.text('Results'));
+
+      // 'Play Along' is both the section heading and the button label;
+      // the heading comes first in the tree.
+      final playAlongHeading = tester.getSemantics(
+        find.text('Play Along').first,
+      );
 
       expect(mainHeading.headingLevel, 1);
 
+      expect(voiceHeading.headingLevel, 2);
+
       expect(resultsHeading.headingLevel, 2);
 
+      expect(playAlongHeading.headingLevel, 2);
+
       semanticsHandle.dispose();
+    });
+
+    testWidgets('recording is available while Play Along waits '
+        'for an analysis result', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildTestApp(apiService: const _HealthyApiService()),
+      );
+
+      await tester.pumpAndSettle();
+
+      final recordButton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Record guitar'),
+      );
+
+      final playAlongButton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Play Along'),
+      );
+
+      expect(recordButton.onPressed, isNotNull);
+
+      expect(playAlongButton.onPressed, isNull);
+
+      expect(
+        find.widgetWithText(FilledButton, 'Listen for a command'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('keeps analysis actions disabled '
