@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import '../services/chord_api_service.dart';
 import '../models/chord_analysis.dart';
+import '../services/speech_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isAnalyzing = false;
 
   ChordAnalysisResult? _analysisResult;
-
+  final SpeechService _speechService = const SpeechService();
   String? _analysisError;
   bool get _hasValidSelection {
     return _selectedFile != null &&
@@ -67,6 +68,26 @@ class _HomeScreenState extends State<HomeScreen> {
       _serviceReady = result.ready;
       _serviceStatus = result.message;
     });
+  }
+
+  Future<void> _readResultAloud() async {
+    final result = _analysisResult;
+
+    if (result == null) {
+      return;
+    }
+
+    try {
+      await _speechService.speak(result.speechText);
+    } on SpeechException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
   }
 
   Future<void> _pickWavFile() async {
@@ -167,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (file == null || fileSize == null || !_serviceReady || _isAnalyzing) {
       return;
     }
-
+    await _speechService.stop();
     setState(() {
       _isAnalyzing = true;
       _analysisResult = null;
@@ -387,13 +408,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 error: _analysisError,
               ),
               const SizedBox(height: 24),
-              const _PrimaryActionButton(
+              _PrimaryActionButton(
                 icon: Icons.volume_up,
                 label: 'Read result aloud',
-                semanticHint:
-                    'Reads the detected chord '
-                    'progression aloud.',
-                onPressed: null,
+                semanticHint: _analysisResult == null
+                    ? 'Analyze a WAV file before '
+                          'reading the result aloud.'
+                    : 'Reads the recognized chord '
+                          'progression and uncertain '
+                          'segments aloud.',
+                onPressed: _analysisResult != null && !_isAnalyzing
+                    ? _readResultAloud
+                    : null,
               ),
               const SizedBox(height: 24),
             ],
@@ -524,10 +550,7 @@ class _ResultCard extends StatelessWidget {
     }
 
     return 'Analysis complete. '
-        'Detected ${readable.length} '
-        'harmonic segments. '
-        'Chord progression: '
-        '${readable.join(', ')}.';
+        '${currentResult.speechText}';
   }
 
   @override
@@ -611,10 +634,18 @@ class _ResultCard extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           'Detected '
-          '${result.harmonicSegments.length} '
-          'harmonic segments',
+          '${result.recognizedChordSegments.length} '
+          'recognized chord segments',
           style: Theme.of(context).textTheme.bodyLarge,
         ),
+        if (result.uncertainSegmentCount > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Uncertain segments: '
+            '${result.uncertainSegmentCount}',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
         const SizedBox(height: 4),
         Text(
           'Audio duration: '

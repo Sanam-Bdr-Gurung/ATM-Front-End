@@ -4,6 +4,11 @@
 
     <application
         android:usesCleartextTraffic="true" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
     <application
         android:label="chords_finder"
         android:name="${applicationName}"

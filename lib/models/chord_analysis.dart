@@ -49,17 +49,32 @@ class ChordAnalysisResult {
   final double audioDurationSec;
 
   final double latencyMs;
+  List<ChordSegment> get recognizedChordSegments {
+    return segments
+        .where((segment) => segment.label != 'N' && segment.label != 'X')
+        .toList(growable: false);
+  }
 
-  List<ChordSegment> get harmonicSegments {
+  List<ChordSegment> get progressionSegments {
     return segments
         .where((segment) => segment.label != 'N')
         .toList(growable: false);
   }
 
+  int get uncertainSegmentCount {
+    return segments.where((segment) => segment.label == 'X').length;
+  }
+
+  String _readableSegment(ChordSegment segment) {
+    if (segment.label == 'X') {
+      return 'Uncertain segment';
+    }
+
+    return segment.display;
+  }
+
   List<String> get readableProgression {
-    return harmonicSegments
-        .map((segment) => segment.display)
-        .toList(growable: false);
+    return progressionSegments.map(_readableSegment).toList(growable: false);
   }
 
   String get progressionText {
@@ -68,6 +83,39 @@ class ChordAnalysisResult {
     }
 
     return readableProgression.join(' → ');
+  }
+
+  String get speechText {
+    if (readableProgression.isEmpty) {
+      return 'No reliable chord progression '
+          'was detected.';
+    }
+
+    final chordCount = recognizedChordSegments.length;
+
+    final uncertaintyCount = uncertainSegmentCount;
+
+    final buffer = StringBuffer();
+
+    buffer.write(
+      'Detected $chordCount recognized '
+      'chord segments',
+    );
+
+    if (uncertaintyCount > 0) {
+      buffer.write(
+        ' and $uncertaintyCount uncertain '
+        'segments',
+      );
+    }
+
+    buffer.write('. The detected progression is ');
+
+    buffer.write(readableProgression.join(', '));
+
+    buffer.write('.');
+
+    return buffer.toString();
   }
 
   factory ChordAnalysisResult.fromJson(Map<String, dynamic> json) {
