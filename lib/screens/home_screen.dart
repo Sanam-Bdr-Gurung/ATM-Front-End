@@ -5,7 +5,14 @@ import '../models/chord_analysis.dart';
 import '../services/speech_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.apiService = const ChordApiService(),
+    this.speechService = const SpeechService(),
+  });
+
+  final ChordApiService apiService;
+  final SpeechService speechService;
 
   @override
   State<HomeScreen> createState() {
@@ -21,7 +28,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectionError;
 
   bool _isPickingFile = false;
-  final ChordApiService _apiService = const ChordApiService();
+  late final ChordApiService _apiService;
+
+  late final SpeechService _speechService;
 
   bool _isCheckingService = true;
 
@@ -31,10 +40,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isAnalyzing = false;
 
   ChordAnalysisResult? _analysisResult;
-  final SpeechService _speechService = const SpeechService();
   String? _analysisError;
 
   bool _showSegmentDetails = false;
+
   bool get _hasValidSelection {
     return _selectedFile != null &&
         _selectedFileSize != null &&
@@ -44,6 +53,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+
+    _apiService = widget.apiService;
+    _speechService = widget.speechService;
 
     _checkAnalysisService();
   }
