@@ -7,6 +7,7 @@ import '../playalong/playalong_controller.dart';
 import '../recording/recording_controller.dart';
 import '../services/chord_api_service.dart';
 import '../models/chord_analysis.dart';
+import '../models/prevailing_summary.dart';
 import '../models/selected_audio.dart';
 import '../services/playback_service.dart';
 import '../services/recording_service.dart';
@@ -180,9 +181,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       unawaited(HapticFeedback.mediumImpact());
 
+      // Play Along announces only prevailing chords: rapid transient
+      // cues are unusable as speech. The raw timeline stays in details.
       await _playAlongController.start(
         audioPath: audio.file.path,
-        segments: result.segments,
+        segments: result.prevailingSummary.segments,
       );
 
       return null;
@@ -343,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final result = _analysisResult;
 
         if (result != null) {
-          await _speakForVoiceFlow(result.speechText);
+          await _speakForVoiceFlow(result.prevailingSummary.speechText);
         }
 
         return VoiceFlowOutcome.continueListening;
@@ -434,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return 'Audio analysis did not complete. Please try again.';
     }
 
-    return 'Analysis complete. ${result.speechText}';
+    return 'Analysis complete. ${result.prevailingSummary.speechText}';
   }
 
   /// Speaks within the voice session, waiting for completion so the
@@ -485,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _voiceController.suspendForMicrophoneHandoff('Reading result.');
 
     try {
-      await _speechService.speakAndWait(result.speechText);
+      await _speechService.speakAndWait(result.prevailingSummary.speechText);
     } on SpeechException catch (error) {
       if (!mounted) {
         return;
@@ -1310,16 +1313,10 @@ class _ResultCard extends StatelessWidget {
           'No analysis yet.';
     }
 
-    final readable = currentResult.readableProgression;
-
-    if (readable.isEmpty) {
-      return 'Analysis complete. '
-          'No reliable chord progression '
-          'was detected.';
-    }
-
+    // The prevailing summary handles the empty case with its own
+    // "no sustained chord progression" wording.
     return 'Analysis complete. '
-        '${currentResult.speechText}';
+        '${currentResult.prevailingSummary.speechText}';
   }
 
   @override
@@ -1398,16 +1395,17 @@ class _ResultCard extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          result.progressionText,
+          result.prevailingSummary.progressionText,
           style: Theme.of(
             context,
           ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
         Text(
-          'Detected '
-          '${result.recognizedChordSegments.length} '
-          'recognized chord segments',
+          'Prevailing chords: '
+          '${result.prevailingSummary.segments.length} '
+          '(${result.recognizedChordSegments.length} raw '
+          'chord segments in details)',
           style: Theme.of(context).textTheme.bodyLarge,
         ),
         if (result.uncertainSegmentCount > 0) ...[
