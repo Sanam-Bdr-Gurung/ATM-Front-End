@@ -12,6 +12,8 @@ class VoiceAppSnapshot {
     required this.hasResult,
     required this.detailsVisible,
     this.selectedAudioIsRecording = false,
+    this.playAlongActive = false,
+    this.playAlongPaused = false,
   });
 
   final bool serviceReady;
@@ -26,6 +28,11 @@ class VoiceAppSnapshot {
 
   /// Whether the selected audio came from the phone microphone.
   final bool selectedAudioIsRecording;
+
+  /// Whether Play Along is running (playing or paused).
+  final bool playAlongActive;
+
+  final bool playAlongPaused;
 }
 
 /// The application action a decided command should invoke. Every action
@@ -42,6 +49,10 @@ enum VoiceAction {
   showDetails,
   hideDetails,
   retryConnection,
+  playAlong,
+  pausePlayback,
+  resumePlayback,
+  stopPlayback,
   stopListening,
 }
 
@@ -69,8 +80,8 @@ class VoiceCommandResponder {
 
   static const String helpSpeech =
       'You can say: choose file, start recording, analyze audio, '
-      'read result, show details, hide details, retry connection, '
-      'or stop listening.';
+      'read result, play along, show details, hide details, '
+      'retry connection, or stop listening.';
 
   static const String _analysisInProgress =
       'ChordAssist is currently analyzing audio. '
@@ -199,8 +210,11 @@ class VoiceCommandResponder {
           'Say start recording to record your guitar.',
         );
 
-      // Play Along arrives in a later checkpoint.
       case VoiceCommand.playAlong:
+        if (state.isAnalyzing) {
+          return const VoiceDecision.reject(_analysisInProgress);
+        }
+
         if (!state.hasResult) {
           return const VoiceDecision.reject(
             'Play Along is available after an audio file '
@@ -208,15 +222,42 @@ class VoiceCommandResponder {
           );
         }
 
-        return const VoiceDecision.reject(
-          'Play Along is not available yet in this version.',
-        );
+        if (state.playAlongActive) {
+          return const VoiceDecision.reject('Play Along is already running.');
+        }
+
+        // The Play Along flow speaks its own start announcement
+        // before the microphone hands over to playback.
+        return const VoiceDecision.accept(VoiceAction.playAlong);
 
       case VoiceCommand.pausePlayback:
+        if (state.playAlongActive && !state.playAlongPaused) {
+          return const VoiceDecision.accept(VoiceAction.pausePlayback);
+        }
+
+        if (state.playAlongPaused) {
+          return const VoiceDecision.reject(
+            'Play Along is already paused. Say resume to continue.',
+          );
+        }
+
+        return const VoiceDecision.reject('Nothing is playing.');
+
       case VoiceCommand.resumePlayback:
+        if (state.playAlongPaused) {
+          return const VoiceDecision.accept(
+            VoiceAction.resumePlayback,
+            speech: 'Resuming Play Along.',
+          );
+        }
+
         return const VoiceDecision.reject('Nothing is playing.');
 
       case VoiceCommand.stopPlayback:
+        if (state.playAlongActive) {
+          return const VoiceDecision.accept(VoiceAction.stopPlayback);
+        }
+
         // With no playback running, "stop" means stop voice control.
         return const VoiceDecision.accept(VoiceAction.stopListening);
 

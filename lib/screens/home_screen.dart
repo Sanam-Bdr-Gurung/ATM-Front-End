@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
+import '../playalong/playalong_controller.dart';
 import '../recording/recording_controller.dart';
 import '../services/chord_api_service.dart';
 import '../models/chord_analysis.dart';
 import '../models/selected_audio.dart';
+import '../services/playback_service.dart';
 import '../services/recording_service.dart';
 import '../services/speech_service.dart';
 
@@ -21,6 +24,7 @@ class HomeScreen extends StatefulWidget {
     this.speechService = const SpeechService(),
     this.voiceCommandService = const VoiceCommandService(),
     this.recordingService,
+    this.playbackService,
     this.autoStartVoiceControl = true,
   });
 
@@ -30,6 +34,9 @@ class HomeScreen extends StatefulWidget {
 
   /// Injectable for tests; the real recorder is created when omitted.
   final RecordingService? recordingService;
+
+  /// Injectable for tests; the real player is created when omitted.
+  final PlaybackService? playbackService;
 
   /// Whether a voice session starts automatically on launch, so the
   /// app is usable without touching the screen. Tests may disable it.
@@ -73,6 +80,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   bool _isRecordingFlowActive = false;
 
+  late final PlayAlongController _playAlongController;
+
+  /// Whether a voice session should resume once Play Along releases
+  /// the audio path (set when a session was active at start).
+  bool _resumeVoiceAfterPlayAlong = false;
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +94,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _speechService = widget.speechService;
 
     _recordingService = widget.recordingService ?? RecordingService();
+
+    _playAlongController = PlayAlongController(
+      playback: widget.playbackService ?? PlaybackService(),
+      speech: widget.speechService,
+    );
+
+    _playAlongController.onFinished = _handlePlayAlongFinished;
 
     _voiceController = VoiceCommandController(
       speechService: widget.speechService,
@@ -104,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
 
     _voiceController.dispose();
+    _playAlongController.dispose();
 
     super.dispose();
   }
@@ -130,7 +151,121 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       hasResult: _analysisResult != null,
       detailsVisible: _showSegmentDetails,
       selectedAudioIsRecording: _selectedAudio?.isRecording ?? false,
+      playAlongActive: _playAlongController.isActive,
+      playAlongPaused: _playAlongController.isPaused,
     );
+  }
+
+  /// Starts Play Along and hands the audio path over to playback,
+  /// suspending any voice session first. Returns an error message, or
+  /// null on success.
+  Future<String?> _startPlayAlong() async {
+    final result = _analysisResult;
+    final audio = _selectedAudio;
+
+    if (result == null || audio == null) {
+      return 'No analysis result is available yet.';
+    }
+
+    await _voiceController.suspendForMicrophoneHandoff('Playing along.');
+
+    await _speakForVoiceFlow(
+      'Starting Play Along. '
+      'Chord names are announced as the audio plays. '
+      'Use the on-screen controls to pause or stop.',
+    );
+
+    try {
+      await HapticFeedback.mediumImpact();
+
+      await _playAlongController.start(
+        audioPath: audio.file.path,
+        segments: result.segments,
+      );
+
+      return null;
+    } on PlaybackException catch (error) {
+      return error.message;
+    }
+  }
+
+  Future<void> _startPlayAlongFromButton() async {
+    final wasVoiceActive = _voiceController.isSessionActive;
+
+    final error = await _startPlayAlong();
+
+    if (error != null) {
+      await _speakForVoiceFlow(error);
+      return;
+    }
+
+    _resumeVoiceAfterPlayAlong = wasVoiceActive;
+  }
+
+  Future<void> _pausePlayAlong() async {
+    if (!_playAlongController.isPlaying) {
+      return;
+    }
+
+    await _playAlongController.pause();
+
+    await HapticFeedback.selectionClick();
+
+    // With playback paused the microphone is free again, so the voice
+    // session can take pause/resume/stop commands.
+    if (_resumeVoiceAfterPlayAlong && mounted) {
+      _voiceController.startManualSession(
+        announcement:
+            'Play Along paused. '
+            'Say resume to continue, or stop playback to finish.',
+      );
+    } else {
+      await _speakForVoiceFlow('Play Along paused.');
+    }
+  }
+
+  Future<void> _resumePlayAlong() async {
+    if (!_playAlongController.isPaused) {
+      return;
+    }
+
+    await _voiceController.suspendForMicrophoneHandoff('Playing along.');
+
+    await _playAlongController.resume();
+
+    await HapticFeedback.selectionClick();
+  }
+
+  Future<void> _stopPlayAlongFromButton() async {
+    if (!_playAlongController.isActive) {
+      return;
+    }
+
+    await _playAlongController.stop();
+
+    await HapticFeedback.mediumImpact();
+
+    await _speakForVoiceFlow('Play Along stopped.');
+
+    if (_resumeVoiceAfterPlayAlong && mounted) {
+      _resumeVoiceAfterPlayAlong = false;
+
+      _voiceController.startManualSession();
+    }
+  }
+
+  void _handlePlayAlongFinished() {
+    HapticFeedback.mediumImpact();
+
+    () async {
+      await _speakForVoiceFlow('Play Along finished.');
+
+      if (_resumeVoiceAfterPlayAlong && mounted) {
+        _resumeVoiceAfterPlayAlong = false;
+
+        _voiceController.startManualSession();
+      }
+    }();
   }
 
   /// Routes a recognized phrase onto the same functions the on-screen
@@ -233,6 +368,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await _checkAnalysisService();
 
         await _speakForVoiceFlow(_serviceStatus);
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.playAlong:
+        final error = await _startPlayAlong();
+
+        if (error != null) {
+          await _speakForVoiceFlow(error);
+
+          return VoiceFlowOutcome.continueListening;
+        }
+
+        _resumeVoiceAfterPlayAlong = true;
+
+        return VoiceFlowOutcome.suspendListening;
+
+      case VoiceAction.pausePlayback:
+        // Defensive: while audio plays the recognizer is off, so this
+        // command normally arrives through the on-screen button.
+        await _pausePlayAlong();
+
+        return VoiceFlowOutcome.continueListening;
+
+      case VoiceAction.resumePlayback:
+        await _resumePlayAlong();
+
+        _resumeVoiceAfterPlayAlong = true;
+
+        return VoiceFlowOutcome.suspendListening;
+
+      case VoiceAction.stopPlayback:
+        await _playAlongController.stop();
+
+        await HapticFeedback.mediumImpact();
+
+        _resumeVoiceAfterPlayAlong = false;
+
+        await _speakForVoiceFlow('Play Along stopped.');
 
         return VoiceFlowOutcome.continueListening;
 
@@ -902,6 +1075,87 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 onPressed: _analysisResult != null && !_isAnalyzing
                     ? _readResultAloud
                     : null,
+              ),
+              const SizedBox(height: 24),
+              Semantics(
+                headingLevel: 2,
+                child: Text(
+                  'Play Along',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListenableBuilder(
+                listenable: _playAlongController,
+                builder: (context, _) {
+                  final playAlong = _playAlongController;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (playAlong.isActive) ...[
+                        _StatusCard(
+                          title: 'Play Along',
+                          message: playAlong.isPaused
+                              ? 'Play Along is paused.'
+                              : 'Now playing: '
+                                    '${playAlong.currentCue ?? 'starting'}',
+                          semanticLabel: playAlong.isPaused
+                              ? 'Play Along is paused.'
+                              : 'Play Along. Now playing '
+                                    '${playAlong.currentCue ?? 'audio'}.',
+                          isError: false,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (!playAlong.isActive)
+                        _PrimaryActionButton(
+                          icon: Icons.play_arrow,
+                          label: 'Play Along',
+                          semanticHint: _analysisResult == null
+                              ? 'Analyze audio before using '
+                                    'Play Along.'
+                              : 'Replays the analyzed audio and '
+                                    'announces each recognized chord.',
+                          onPressed:
+                              _analysisResult != null &&
+                                  _selectedAudio != null &&
+                                  !_isAnalyzing
+                              ? _startPlayAlongFromButton
+                              : null,
+                        ),
+                      if (playAlong.isPlaying) ...[
+                        _PrimaryActionButton(
+                          icon: Icons.pause,
+                          label: 'Pause',
+                          semanticHint: 'Pauses Play Along playback.',
+                          onPressed: _pausePlayAlong,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (playAlong.isPaused) ...[
+                        _PrimaryActionButton(
+                          icon: Icons.play_arrow,
+                          label: 'Resume',
+                          semanticHint: 'Resumes Play Along playback.',
+                          onPressed: _resumePlayAlong,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (playAlong.isActive)
+                        _PrimaryActionButton(
+                          icon: Icons.stop,
+                          label: 'Stop play along',
+                          semanticHint:
+                              'Stops Play Along and returns '
+                              'to voice control.',
+                          onPressed: _stopPlayAlongFromButton,
+                        ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 24),
             ],

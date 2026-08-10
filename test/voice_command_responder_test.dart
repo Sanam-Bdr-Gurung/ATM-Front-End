@@ -9,6 +9,8 @@ VoiceAppSnapshot snapshot({
   bool hasResult = false,
   bool detailsVisible = false,
   bool selectedAudioIsRecording = false,
+  bool playAlongActive = false,
+  bool playAlongPaused = false,
 }) {
   return VoiceAppSnapshot(
     serviceReady: serviceReady,
@@ -17,6 +19,8 @@ VoiceAppSnapshot snapshot({
     hasResult: hasResult,
     detailsVisible: detailsVisible,
     selectedAudioIsRecording: selectedAudioIsRecording,
+    playAlongActive: playAlongActive,
+    playAlongPaused: playAlongPaused,
   );
 }
 
@@ -191,6 +195,72 @@ void main() {
 
       expect(decision.isRejection, isTrue);
       expect(decision.speech, contains('after an audio file'));
+    });
+
+    test('play along with a result is accepted', () {
+      final decision = responder.decide(
+        VoiceCommand.playAlong,
+        snapshot(hasResult: true, hasSelectedAudio: true),
+      );
+
+      expect(decision.action, VoiceAction.playAlong);
+    });
+
+    test('play along while already running is rejected', () {
+      final decision = responder.decide(
+        VoiceCommand.playAlong,
+        snapshot(hasResult: true, playAlongActive: true),
+      );
+
+      expect(decision.isRejection, isTrue);
+      expect(decision.speech, contains('already running'));
+    });
+
+    test('pause is accepted only while playing', () {
+      expect(
+        responder
+            .decide(
+              VoiceCommand.pausePlayback,
+              snapshot(hasResult: true, playAlongActive: true),
+            )
+            .action,
+        VoiceAction.pausePlayback,
+      );
+
+      expect(
+        responder.decide(VoiceCommand.pausePlayback, snapshot()).isRejection,
+        isTrue,
+      );
+    });
+
+    test('resume is accepted only while paused', () {
+      expect(
+        responder
+            .decide(
+              VoiceCommand.resumePlayback,
+              snapshot(
+                hasResult: true,
+                playAlongActive: true,
+                playAlongPaused: true,
+              ),
+            )
+            .action,
+        VoiceAction.resumePlayback,
+      );
+
+      expect(
+        responder.decide(VoiceCommand.resumePlayback, snapshot()).isRejection,
+        isTrue,
+      );
+    });
+
+    test('stop during Play Along stops playback', () {
+      final decision = responder.decide(
+        VoiceCommand.stopPlayback,
+        snapshot(hasResult: true, playAlongActive: true, playAlongPaused: true),
+      );
+
+      expect(decision.action, VoiceAction.stopPlayback);
     });
 
     test('stop with no playback stops listening', () {
