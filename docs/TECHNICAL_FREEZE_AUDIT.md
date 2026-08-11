@@ -1,0 +1,92 @@
+# Technical Freeze Audit
+
+Date: 2026-08-11
+Backend audited at: `Sanam-Bdr-Gurung/ATM` @ `73dd863` (branch
+`feature/chord-first-recognition`)
+Frontend audited at: `Sanam-Bdr-Gurung/ATM-Front-End` @ `49af7d7` (branch `main`)
+
+Purpose: establish exactly what is implemented before final device validation.
+This audit changes nothing; it records facts.
+
+## 1. Backend invariants (confirmed, unchanged)
+
+Verified in `chord_config.py` at backend HEAD:
+
+| Invariant | Value | Status |
+|---|---|---|
+| Selected method (app requests) | `basic_pitch` | ✅ (frontend sends `method=basic_pitch`; see §2.9) |
+| `configuration_id` | `development_8clip_grid_20260806` | ✅ |
+| `minimum_score` | 0.58 | ✅ |
+| `ambiguity_margin` | 0.020 | ✅ |
+| `minimum_segment_duration_sec` | 0.60 | ✅ |
+
+- Formal evaluation code/evidence unchanged: `git diff HEAD` over
+  `docs/evaluation_evidence/`, `evaluation_data/`, and `chord_config.py` shows
+  no content changes (only `.DS_Store` binary noise, untracked-quality).
+- Reproducibility audit of 2026-08-10 stands: live API reproduced all four
+  archived held-out responses and the archived `dev_clean_01` development
+  response byte-identically (COREML runtime, matching note-event counts).
+- The 1.25 s presentation threshold exists **only** in the frontend
+  (`lib/models/prevailing_summary.dart:presentationMinimumDurationSec`). A
+  repository-wide search of the backend finds no presentation threshold; the
+  only literal `1.25` in backend code is an unrelated test fixture duration
+  (`eval/test_chroma_chord_path.py:259`). The backend cannot see or be
+  affected by the presentation layer: it receives WAV bytes and returns JSON.
+- Backend test suite: **56/56 passed** (pytest run via a separate Python
+  3.10 side-venv against the frozen `.venv` site-packages; the frozen venv was
+  not modified).
+
+## 2. Frontend feature state
+
+All items below are implemented and covered by the 85-test suite unless noted.
+
+| # | Feature | Status | Where |
+|---|---|---|---|
+| 2.1 | System-assistant launch compatibility | Implemented via standard launcher intent; **app label is `Guitar`** (AndroidManifest.xml `android:label`), so the assistant phrase is "Open Guitar", not "Open ChordAssist" | `android/app/src/main/AndroidManifest.xml` |
+| 2.2 | Automatic voice-first startup | Implemented; post-frame `startLaunchSession()` when `autoStartVoiceControl` | `lib/screens/home_screen.dart` `initState` (~L93–122); `lib/voice/voice_command_controller.dart` |
+| 2.3 | First-run microphone explanation | Implemented: app speaks an explanation *before* triggering the Android permission dialog; speaks confirmation after grant | `voice_command_controller.dart` (~L66, L110–167: `permissionGrantedAnnouncement`, launch flow) |
+| 2.4 | Microphone permission handling | Implemented natively (no `permission_handler` plugin): check + request over a dedicated MethodChannel | `MainActivity.kt` `hasRecordAudioPermission` (L332), `requestRecordAudioPermission` (L341); manifest `RECORD_AUDIO` |
+| 2.5 | Half-duplex TTS/listening | Implemented: speak-and-wait then listen; recognizer never runs during app speech; utterance tracking on the native side | `voice_command_controller.dart` (session loop); `lib/services/speech_service.dart`; `MainActivity.kt` `handleSpeakAndWait` (L131), `UtteranceProgressListener` (L255–280) |
+| 2.6 | Deterministic voice parser | Implemented: 17 commands + `unknown`; pure and unit-tested | `lib/voice/voice_command.dart` (enum); `voice_command_parser.dart`; state-aware logic in `voice_command_responder.dart` |
+| 2.7 | Choose File voice command | Implemented → system file picker (`file_selector`) | `home_screen.dart` command switch; `voice_command_responder.dart` |
+| 2.8 | Analyze voice command | Implemented; same function as the Analyze button | `home_screen.dart` `_analyzeSelectedAudio` path (voice case ~L335) |
+| 2.9 | Backend request | Multipart WAV upload to `/analyze-file?method=basic_pitch`; response `method` verified | `lib/services/chord_api_service.dart` (L124; method check in parse) |
+| 2.10 | Read Result | Implemented (voice + touch), speaks the presentation summary | `home_screen.dart` (~L346, `_readResultAloud` ~L480) |
+| 2.11 | Show/Hide Details | Implemented (voice + touch) | `home_screen.dart` `showDetails`/`hideDetails` cases; `_SegmentDetails` widget |
+| 2.12 | Retry Connection | Implemented (voice + touch) → `/health` re-check | `home_screen.dart` `_checkAnalysisService`; `chord_api_service.dart` `checkHealth` |
+| 2.13 | Phone WAV recording | Implemented (`record` 7.1.1, PCM WAV) | `lib/services/recording_service.dart`; `lib/recording/recording_controller.dart` |
+| 2.14 | Accessible Stop Recording mode | Implemented: dedicated full-screen route; whole screen is one TalkBack button ("Stop recording") with hint; sighted users tap anywhere | `lib/screens/recording_screen.dart` (Semantics L153–157) |
+| 2.15 | Recorded-audio analysis | Implemented: recording becomes `SelectedAudio`, same analysis path as picked files | `lib/models/selected_audio.dart`; `home_screen.dart` |
+| 2.16 | Prevailing spoken summary | Implemented: threshold-first 1.25 s filter, dev-selected; wired into all spoken paths + headline | `lib/models/prevailing_summary.dart`; `home_screen.dart` (4 call sites) |
+| 2.17 | Long-X uncertainty retention | Implemented: X ≥ 1.25 s retained as "Uncertain segment"; short X omitted and acknowledged in one trailing sentence | `prevailing_summary.dart` (`uncertaintyNote`, filter loop) |
+| 2.18 | Raw segment details | Implemented: full unmodified timeline with times/confidence, N and X included | `home_screen.dart` `_SegmentDetails`, `_SegmentCard` |
+| 2.19 | Play Along | Implemented: replays analyzed audio (`just_audio`), announces cues at backend `segment.start`; never re-runs recognition | `lib/playalong/playalong_controller.dart`; `lib/services/playback_service.dart` |
+| 2.20 | Play Along pause/resume/stop | Implemented (voice + touch), plus completion announcement and rewind resync | `playalong_controller.dart` (`pause`/`resume`/`stop`, `_resyncPointer`) |
+| 2.21 | Original cue timestamps | Implemented: Play Along consumes `PrevailingSummary.cueSegments` — retained segments, unmerged, original backend times; no synthetic spans | `prevailing_summary.dart` (`cueSegments`); `home_screen.dart` `_startPlayAlong` |
+| 2.22 | TalkBack semantics | Implemented: heading levels, labeled/one-button screens, result cards use `excludeSemantics` + composed labels, deliberately not live regions | `home_screen.dart` (Semantics throughout); `recording_screen.dart`; covered by widget tests |
+| 2.23 | Voice Access-compatible labels | Implemented: visible text labels on all primary controls (buttons carry their spoken names) | `home_screen.dart` controls; verified in widget tests |
+| 2.24 | Large-text behavior | Partially verified: layout uses scalable text styles and passes Flutter's Android accessibility guideline tests (incl. text contrast); no explicit `textScaler` clamping anywhere, so large-font behavior on device remains to be validated (Scenario H) | `lib/main.dart` theme; `test/widget_test.dart` |
+
+Native voice stack: TTS and SpeechRecognizer are implemented over two
+MethodChannels in `MainActivity.kt` (610 lines; TTS: L65–309, recognition +
+permission: L311+). No third-party speech plugins are used.
+
+## 3. Known limitations — current factual status (not fixed, per instructions)
+
+| Item | Status |
+|---|---|
+| Audio ducking during Play Along | **Not implemented.** No audio-focus/ducking code in Dart or Kotlin; TTS mixes over `just_audio` playback at system default. Whether ducking is needed is a Scenario D device question. |
+| Voice-session foreground/lifecycle recovery | **Partial.** Backgrounding suspends the session safely (`home_screen.dart` `didChangeAppLifecycleState` L136 → `handleAppBackgrounded()`); there is **no automatic resume** on return to foreground — the user must restart listening (Start/Listen button or relaunch). |
+| TalkBack speech captured while recognizer is open | **Mitigated by design, not eliminated.** Half-duplex loop + non-live-region result cards (fix landed in `5636153`); residual risk remains when TalkBack itself speaks while the recognizer window is open — device Scenario E checks this. |
+| Latest-recording-only retention | **Confirmed by design.** `RecordingService` writes one fixed cache file and overwrites it on each new recording (`recording_service.dart` L34–39); no recording history exists. |
+| Network configuration | **Compile-time only.** `ChordApiService.baseUrl` = `--dart-define=CHORD_API_BASE_URL`, default `http://10.0.2.2:8000` (emulator loopback). Physical-device use requires rebuilding with the host's LAN IP; cleartext HTTP is enabled in the manifest for LAN development. No in-app URL setting. |
+
+## 4. Baseline verification (Phase 0 record)
+
+- Backend: branch `feature/chord-first-recognition`, HEAD `73dd863`, remote
+  `https://github.com/Sanam-Bdr-Gurung/ATM.git`, pushed; working tree clean
+  except `.DS_Store` noise; tests 56/56 pass.
+- Frontend: branch `main`, HEAD `49af7d7`, remote
+  `git@github.com:Sanam-Bdr-Gurung/ATM-Front-End.git`, pushed; working tree
+  clean; `flutter analyze` clean; tests 85/85 pass; `flutter build apk
+  --debug` succeeds (`build/app/outputs/flutter-apk/app-debug.apk`).
