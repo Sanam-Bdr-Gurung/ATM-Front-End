@@ -944,6 +944,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ],
+              const SizedBox(height: 32),
               Semantics(
                 headingLevel: 2,
                 child: Text(
@@ -1047,7 +1048,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ? _analyzeSelectedAudio
                     : null,
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
               Semantics(
                 headingLevel: 2,
                 child: Text(
@@ -1058,7 +1059,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               _ResultCard(
                 isAnalyzing: _isAnalyzing,
                 result: _analysisResult,
@@ -1117,7 +1118,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ? _readResultAloud
                     : null,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               Semantics(
                 headingLevel: 2,
                 child: Text(
