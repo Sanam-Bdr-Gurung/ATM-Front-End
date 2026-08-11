@@ -24,7 +24,7 @@ class ChordAssistApp extends StatelessWidget {
         );
 
     return MaterialApp(
-      title: 'Guitar',
+      title: 'Chord Assist',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

@@ -37,10 +37,15 @@ cd ~/Documents/sanam/thesis/chordassist/frontend/chords_finder && flutter build 
 ```
 
 Notes:
-- The app's launcher label is **"Guitar"** — assistant phrase is "Open
-  Guitar". (Decision for Sanam: keep this label or rename; see audit §2.1.)
+- The app's launcher label is **"Chord Assist"** — assistant phrase is "Open
+  Chord Assist". (Product/UI name: ChordAssist.)
+- If Bixby consistently fails to recognize "Chord Assist" because of the
+  tester's pronunciation, record this as an **accessibility observation**. A
+  personal Bixby Quick Command (e.g. "open my thesis") may be tested as a
+  system-level fallback, but it is not the application's canonical name.
+  Do not mark that fallback as required or verified until actually tested.
 - First analysis after backend start is slower (one-time CoreML model load).
-- To reset to a true first launch: Settings → Apps → Guitar → Storage →
+- To reset to a true first launch: Settings → Apps → Chord Assist → Storage →
   Clear data, and Permissions → Microphone → Remove/Deny; or
   `adb shell pm clear com.chords.finder.chords_finder`.
 
@@ -50,7 +55,7 @@ Precondition: cleared app data + revoked microphone permission.
 
 | Step | Expected | PASS/FAIL | Notes |
 |---|---|---|---|
-| Say "Hi Bixby, open Guitar" | App launches from assistant | | |
+| Say "Hi Bixby, open Chord Assist" | App launches from assistant | | |
 | App speaks intro BEFORE any permission dialog | Spoken explanation of upcoming mic permission | | |
 | Android microphone permission dialog appears | After the explanation | | |
 | Operate the dialog with Voice Access | "Allow" selectable by voice | | |

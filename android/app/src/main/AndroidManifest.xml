@@ -17,7 +17,7 @@
     </queries>
     <!-- Cleartext HTTP is only for development against a LAN backend. -->
     <application
-        android:label="Guitar"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

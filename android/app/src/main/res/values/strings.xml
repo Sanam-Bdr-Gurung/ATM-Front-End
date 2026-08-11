@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher-visible name; spoken by assistants ("Open Chord Assist")
+         and read by TalkBack. The product/UI name remains ChordAssist. -->
+    <string name="app_name">Chord Assist</string>
+</resources>
