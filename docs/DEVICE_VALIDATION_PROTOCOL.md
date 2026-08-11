@@ -16,6 +16,13 @@ without individual notes passed without observations. The re-recording
 defect found during this session was fixed in `e9223d7` and re-validated
 before these results were recorded.
 
+**Post-validation note (2026-08-11, later):** the APK installed on the device
+after the re-record fix was built *without* `--dart-define`, so it carries the
+emulator-only default backend URL (`http://10.0.2.2:8000`) and cannot reach
+the Mac backend from the phone. In-app recording still works offline, but any
+further in-app analysis on the device requires reinstalling with the setup
+command above (correct `CHORD_API_BASE_URL`).
+
 ## 0. Setup (exact commands)
 
 On the Mac (backend host):
