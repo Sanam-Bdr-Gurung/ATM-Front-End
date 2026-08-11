@@ -81,6 +81,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   late final RecordingService _recordingService;
 
+  late final bool _ownsRecordingService;
+
   bool _isRecordingFlowActive = false;
 
   late final PlayAlongController _playAlongController;
@@ -95,6 +97,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     _apiService = widget.apiService;
     _speechService = widget.speechService;
+
+    _ownsRecordingService = widget.recordingService == null;
 
     _recordingService = widget.recordingService ?? RecordingService();
 
@@ -128,6 +132,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     _voiceController.dispose();
     _playAlongController.dispose();
+
+    if (_ownsRecordingService) {
+      _recordingService.dispose();
+    }
 
     super.dispose();
   }

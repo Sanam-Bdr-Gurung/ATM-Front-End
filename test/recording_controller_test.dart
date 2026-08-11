@@ -36,8 +36,12 @@ class _FakeRecordingService extends RecordingService {
     cancelCalled = true;
   }
 
+  bool disposeCalled = false;
+
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    disposeCalled = true;
+  }
 }
 
 void main() {
@@ -167,6 +171,57 @@ void main() {
         fake.flushMicrotasks();
 
         expect(thrown, isA<RecordingException>());
+      });
+    });
+
+    test('dispose never disposes the shared recording service', () {
+      // Regression: the controller is per-session, but the service (and
+      // its platform recorder) is shared across sessions. Disposing the
+      // service here broke every recording after the first one.
+      fakeAsync((fake) {
+        final service = _FakeRecordingService();
+
+        final controller = RecordingController(service: service);
+
+        controller.start();
+        fake.flushMicrotasks();
+
+        controller.stop();
+        fake.flushMicrotasks();
+
+        controller.dispose();
+
+        expect(service.disposeCalled, isFalse);
+      });
+    });
+
+    test('a second session on the same service records again', () {
+      fakeAsync((fake) {
+        final service = _FakeRecordingService();
+
+        final first = RecordingController(service: service);
+
+        first.start();
+        fake.flushMicrotasks();
+
+        first.stop();
+        fake.flushMicrotasks();
+
+        first.dispose();
+
+        final second = RecordingController(service: service);
+
+        second.start();
+        fake.flushMicrotasks();
+
+        expect(second.isRecording, isTrue);
+
+        second.stop();
+        fake.flushMicrotasks();
+
+        second.dispose();
+
+        expect(service.disposeCalled, isFalse);
       });
     });
   });

@@ -192,7 +192,9 @@ class RecordingController extends ChangeNotifier {
       _service.cancel();
     }
 
-    _service.dispose();
+    // The service is shared across recording sessions and owned by the
+    // home screen; disposing it here would break every later recording
+    // (the platform recorder cannot be reused after disposal).
 
     super.dispose();
   }

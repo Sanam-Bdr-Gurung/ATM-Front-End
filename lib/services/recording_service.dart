@@ -88,8 +88,15 @@ class RecordingService {
   }
 
   Future<void> dispose() async {
+    // Drop the cached instance FIRST: a disposed platform recorder must
+    // never be reused, so the next recording creates a fresh one even if
+    // something disposes this service mid-lifecycle.
+    final recorder = _recorderInstance;
+
+    _recorderInstance = null;
+
     try {
-      await _recorderInstance?.dispose();
+      await recorder?.dispose();
     } catch (_) {
       // Disposal is best-effort.
     }
