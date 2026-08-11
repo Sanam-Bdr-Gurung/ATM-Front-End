@@ -4,9 +4,11 @@
 Design rationale (accessibility-first):
 - bold, high-contrast shapes that stay legible at 48 px and for
   low-vision users: dark stage background, warm amber marks;
-- three guitar strings with three fingering dots (a chord diagram);
-- the two upper dots deliberately form the braille letter C ("Chord");
-- a resonance arc suggests sound rather than sight.
+- a chord-diagram face: nut bar, three strings, an amber fingering dot
+  and a resonance-arc smile;
+- black sunglasses over the eye positions — the classic visual signifier
+  of blindness — occluding the light strings so the black lenses stay
+  readable on the dark tile.
 
 Requires matplotlib. Usage:
   python3 tool/generate_app_icon.py
@@ -64,12 +66,28 @@ def draw_icon(pixels: int, path: Path) -> None:
     ax.plot([0.25, 0.75], [0.80, 0.80], color=STRING, alpha=0.95,
             linewidth=string_lw * 1.6, solid_capstyle="round", zorder=2)
 
-    # fingering dots; the upper pair is braille "C" (dots 1 and 4)
+    # black sunglasses over the eye positions (lenses occlude the light
+    # strings, so pure black stays visible on the dark tile; a soft grey
+    # rim keeps the silhouette readable at launcher sizes)
+    lens_r = 0.125
+    rim = "#A9A3B4"
+    rim_lw = max(pixels * 0.022, 1.5)
+    eye_y = 0.655
+    for cx in (0.30, 0.70):
+        ax.add_patch(Circle((cx, eye_y), lens_r, facecolor="#000000",
+                            edgecolor=rim, linewidth=rim_lw, zorder=4))
+    ax.plot([0.30 + lens_r, 0.70 - lens_r], [eye_y + 0.04, eye_y + 0.04],
+            color=rim, linewidth=rim_lw * 1.3, solid_capstyle="round",
+            zorder=5)
+    for x0, x1 in ((0.30 - lens_r, 0.115), (0.70 + lens_r, 0.885)):
+        ax.plot([x0, x1], [eye_y + 0.02, eye_y + 0.055], color=rim,
+                linewidth=rim_lw * 1.2, solid_capstyle="round", zorder=4)
+
+    # amber fingering dot as the nose of the face
     dot_r = 0.085
-    for cx, cy in ((0.30, 0.66), (0.70, 0.66), (0.50, 0.47)):
-        ax.add_patch(Circle((cx, cy), dot_r + 0.018, color=BACKGROUND,
-                            zorder=3))
-        ax.add_patch(Circle((cx, cy), dot_r, color=AMBER, zorder=4))
+    ax.add_patch(Circle((0.50, 0.44), dot_r + 0.018, color=BACKGROUND,
+                        zorder=3))
+    ax.add_patch(Circle((0.50, 0.44), dot_r, color=AMBER, zorder=4))
 
     # resonance arc (sound, not sight)
     arc_lw = max(pixels * 0.030, 1.4)
